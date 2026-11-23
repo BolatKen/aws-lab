@@ -1,0 +1,38 @@
+name: deploy
+on:
+  push:
+    branches: [main]
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: |
+          pip install cfn-lint
+          cfn-lint templates/ecr.yaml templates/app.yaml templates/cicd.yaml
+          python -m py_compile app/app.py
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Build and push image tagged with the commit SHA
+        run: |
+          REPO_NAME=$(aws cloudformation describe-stacks --stack-name orders-ecr --query "Stacks[0].Outputs[?OutputKey=='RepoName'].OutputValue" --output text)
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          REGISTRY=$ACCOUNT.dkr.ecr.us-east-1.amazonaws.com
+          aws ecr get-login-password | docker login -u AWS --password-stdin $REGISTRY
+          docker build -t $REGISTRY/$REPO_NAME:$GITHUB_SHA ./app
+          if ! aws ecr describe-images --repository-name $REPO_NAME --image-ids imageTag=$GITHUB_SHA > /dev/null 2>&1; then
+            docker push $REGISTRY/$REPO_NAME:$GITHUB_SHA
+          fi
+          echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
+      - name: Deploy the stack with the new tag
+        run: |
+          aws cloudformation deploy --stack-name orders-app --template-file templates/app.yaml \
+            --parameter-overrides Env=dev RepoName=$REPO_NAME ImageTag=$GITHUB_SHA \
+            --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset
