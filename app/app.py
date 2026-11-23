@@ -5,7 +5,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             body = b"OK"
         else:
-            body = b"orders api"
+            body = b"orders api v2"
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
