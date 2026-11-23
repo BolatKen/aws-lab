@@ -12,4 +12,3 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
-def broken(
